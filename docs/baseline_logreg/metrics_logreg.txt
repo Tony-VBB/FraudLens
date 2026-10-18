@@ -1,0 +1,25 @@
+FraudLens - Spark MLlib evaluation
+Model: weighted Logistic Regression
+Input: hdfs:///fraudlens/processed/paysim_cleaned
+Total valid records: 6101255
+Legitimate records: 6093435
+Fraud records: 7820
+Fraud percentage: 0.128170%
+Training records: 4880150
+Testing records: 1221105
+
+Confusion matrix (test set):
+True negatives: 1049613
+False positives: 169917
+False negatives: 150
+True positives: 1425
+
+Accuracy: 0.860727
+Fraud precision: 0.008317
+Fraud recall: 0.904762
+Fraud F1-score: 0.016482
+ROC-AUC: 0.962220
+PR-AUC: 0.300007
+
+Saved model: hdfs:///fraudlens/models/spark_fraud_model
+Saved predictions: hdfs:///fraudlens/results/spark_fraud_predictions

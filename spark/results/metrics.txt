@@ -1,0 +1,47 @@
+FraudLens - Spark MLlib evaluation
+Model: Random Forest (numTrees=40, maxDepth=8, maxBins=32, subsamplingRate=0.50, minInstancesPerNode=10, class-weighted, seed=42)
+Input: hdfs:///fraudlens/processed/paysim_cleaned
+Total valid records: 6362620
+Legitimate records: 6354407
+Fraud records: 8213
+Fraud percentage: 0.129082%
+Training records: 5089383
+Testing records: 1273237
+
+Confusion matrix (test set, default decision rule):
+True negatives: 1245214
+False positives: 26372
+False negatives: 17
+True positives: 1634
+
+Accuracy: 0.979274
+Fraud precision: 0.058345
+Fraud recall: 0.989703
+Fraud F1-score: 0.110193
+ROC-AUC: 0.998507
+PR-AUC: 0.855710
+
+Precision/recall by probability threshold:
+threshold 0.3: precision=0.037472 recall=0.993943 flagged=43793 (TP=1641 FP=42152)
+threshold 0.5: precision=0.058345 recall=0.989703 flagged=28006 (TP=1634 FP=26372)
+threshold 0.7: precision=0.112461 recall=0.969715 flagged=14236 (TP=1601 FP=12635)
+threshold 0.9: precision=0.444757 recall=0.860690 flagged=3195 (TP=1421 FP=1774)
+
+Feature importances (highest first):
+originBalanceChange    0.348481
+oldbalanceOrg          0.162842
+newbalanceOrig         0.115076
+amount                 0.099158
+type=PAYMENT           0.055843
+destBalanceChange      0.047194
+type=TRANSFER          0.041644
+type=CASH_IN           0.035004
+step                   0.030162
+newbalanceDest         0.029885
+oldbalanceDest         0.023260
+type=CASH_OUT          0.011202
+type=DEBIT             0.000249
+type=<unseen>          0.000000
+
+Saved model: hdfs:///fraudlens/models/spark_fraud_rf_model
+Saved predictions: hdfs:///fraudlens/results/spark_fraud_rf_predictions

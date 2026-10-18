@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FraudLens Dashboard</title>
+<style>
+:root{--bg:#f4f6fa;--card:#fff;--ink:#1c2733;--mut:#637083;--line:#dfe5ee;--brand:#2f5d8a;--brand2:#e08a3c;--bad:#c0504d;--good:#3d8b5a;--warn:#c99a2e}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.45 "Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:#1d3550;color:#fff;padding:14px 28px;display:flex;align-items:center;gap:28px;flex-wrap:wrap}
+header h1{margin:0;font-size:20px;letter-spacing:.3px} header h1 span{font-weight:400;opacity:.75;font-size:13px;margin-left:10px}
+nav{display:flex;gap:4px;flex-wrap:wrap}
+nav button{background:transparent;border:0;color:#cfdbe8;padding:8px 14px;border-radius:6px;font-size:14px;cursor:pointer}
+nav button:hover{background:#2b4a6b} nav button.active{background:#fff;color:#1d3550;font-weight:600}
+main{max-width:1180px;margin:22px auto;padding:0 18px}
+section{display:none} section.active{display:block}
+.grid{display:grid;gap:14px} .kpis{grid-template-columns:repeat(auto-fit,minmax(170px,1fr));margin-bottom:16px}
+.two{grid-template-columns:repeat(auto-fit,minmax(440px,1fr))}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+.card h3{margin:0 0 10px;font-size:15px} .card h3 small{font-weight:400;color:var(--mut);margin-left:6px}
+.kpi .v{font-size:25px;font-weight:650;margin-top:2px} .kpi .l{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.4px} .kpi .s{color:var(--mut);font-size:12px}
+.empty{padding:22px;border:1px dashed #b8c4d4;border-radius:8px;color:var(--mut);background:#fafbfd}
+.empty code{background:#eef2f7;padding:2px 6px;border-radius:4px;color:#1c2733}
+table{border-collapse:collapse;width:100%} th,td{padding:7px 10px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{background:#eef2f8;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.3px} th:first-child,td:first-child{text-align:left}
+td.l,th.l{text-align:left}
+.tw{overflow-x:auto}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:12px}
+.bar label{display:flex;flex-direction:column;font-size:12px;color:var(--mut);gap:3px}
+select,input[type=number]{padding:6px 8px;border:1px solid #c5cfdc;border-radius:6px;font:inherit;background:#fff;min-width:110px}
+button.btn{padding:7px 14px;border:0;border-radius:6px;background:var(--brand);color:#fff;cursor:pointer;font:inherit} button.btn:disabled{opacity:.4;cursor:default}
+.pill{display:inline-block;padding:1px 9px;border-radius:99px;font-size:12px;font-weight:600}
+.p-yes{background:#fbe3e2;color:#9c2f2c}.p-no{background:#e0f1e7;color:#2a6b43}.p-tp{background:#e0f1e7;color:#2a6b43}.p-fp{background:#fcf0d4;color:#8a6410}.p-fn{background:#fbe3e2;color:#9c2f2c}.p-tn{background:#eef2f7;color:#637083}
+.stage{display:flex;align-items:center;gap:14px;padding:12px 4px;border-bottom:1px solid var(--line)} .stage:last-child{border:0}
+.dot{width:12px;height:12px;border-radius:50%;flex:none} .dot.done{background:var(--good)}.dot.missing{background:var(--bad)}.dot.unknown,.dot.partial{background:var(--warn)}
+.stage .n{font-weight:600;min-width:210px}.stage .t{color:var(--mut);min-width:56px}.stage .w{color:var(--mut);font-family:Consolas,monospace;font-size:12px;flex:1;overflow-wrap:anywhere}
+.cm{display:grid;grid-template-columns:90px 1fr 1fr;gap:6px;max-width:440px;margin:6px 0}
+.cm div{padding:14px 8px;border-radius:8px;text-align:center}.cm .h{background:none;font-size:12px;color:var(--mut);padding:6px}
+.cm .v{font-size:21px;font-weight:650}.cm .k{font-size:11px;opacity:.85}
+#partial{display:none;background:#fcf0d4;color:#6b4e0c;border-bottom:1px solid #e8d5a0;padding:8px 24px;font-size:13.5px}
+.note{color:var(--mut);font-size:12.5px;margin-top:8px}
+.slider{display:flex;align-items:center;gap:12px;margin:6px 0 12px} .slider input{flex:1}
+.pager{display:flex;gap:10px;align-items:center;justify-content:flex-end;margin-top:12px;color:var(--mut)}
+svg text{font-family:inherit}
+</style>
+</head>
+<body>
+<header>
+  <h1>FraudLens<span>Hadoop · Pig · Hive · Spark MLlib</span></h1>
+  <nav id="nav">
+    <button data-tab="overview" class="active">Overview</button>
+    <button data-tab="transactions">Transactions</button>
+    <button data-tab="alerts">Fraud alerts</button>
+    <button data-tab="model">Model performance</button>
+    <button data-tab="pipeline">Pipeline status</button>
+  </nav>
+</header>
+<div id="partial"></div>
+<main>
+  <section id="overview" class="active"></section>
+  <section id="transactions"></section>
+  <section id="alerts"></section>
+  <section id="model"></section>
+  <section id="pipeline"></section>
+</main>
+
+<script>
+const $ = (s, r=document) => r.querySelector(s);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const n0 = v => (v==null||isNaN(v)) ? '—' : Number(v).toLocaleString('en-US',{maximumFractionDigits:0});
+const n2 = v => (v==null||isNaN(v)) ? '—' : Number(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+const pct = (v,d=2) => (v==null||isNaN(v)) ? '—' : (v*100).toFixed(d)+'%';
+const f4 = v => (v==null||isNaN(v)) ? '—' : Number(v).toFixed(4);
+async function api(path){ const r = await fetch(path); return r.json(); }
+const empty = (what, hint) => `<div class="empty"><b>${esc(what)} not available yet.</b><br>${esc(hint||'')}</div>`;
+const kpi = (l,v,s='') => `<div class="card kpi"><div class="l">${esc(l)}</div><div class="v">${v}</div><div class="s">${esc(s)}</div></div>`;
+
+/* ------------------------------------------------ SVG charts (no external libraries) */
+function niceMax(v){ if(!(v>0)) return 1; const e=Math.pow(10,Math.floor(Math.log10(v))), f=v/e; return (f<=1?1:f<=2?2:f<=2.5?2.5:f<=5?5:10)*e; }
+function barChart(items, {valueFmt=n0, color='#2f5d8a', h=230}={}){
+  const w=520, padL=52, padB=34, padT=14, max=niceMax(Math.max(...items.map(i=>i.value),1e-9)*1.05);
+  const bw=(w-padL-10)/items.length;
+  let s=`<svg viewBox="0 0 ${w} ${h}" width="100%">`;
+  for(let k=0;k<=4;k++){ const y=padT+(h-padT-padB)*(1-k/4); s+=`<line x1="${padL}" x2="${w-6}" y1="${y}" y2="${y}" stroke="#e3e8f0"/><text x="${padL-6}" y="${y+4}" font-size="10" text-anchor="end" fill="#637083">${valueFmt(max*k/4)}</text>`; }
+  items.forEach((it,i)=>{ const bh=(h-padT-padB)*it.value/max, x=padL+i*bw+bw*.18, y=h-padB-bh;
+    s+=`<rect x="${x}" y="${y}" width="${bw*.64}" height="${Math.max(bh,0)}" rx="3" fill="${it.color||color}"/>`;
+    s+=`<text x="${x+bw*.32}" y="${y-4}" font-size="10.5" text-anchor="middle" fill="#1c2733">${valueFmt(it.value)}</text>`;
+    s+=`<text x="${x+bw*.32}" y="${h-padB+15}" font-size="10.5" text-anchor="middle" fill="#637083">${esc(it.label)}</text>`; });
+  return s+'</svg>';
+}
+function lineChart(series, xs, {h=250}={}){
+  const w=1040,padL=52,padB=34,padT=14, max=niceMax(Math.max(...series.flatMap(s=>s.values),1)*1.05), n=xs.length;
+  const X=i=>padL+(w-padL-10)*(n<2?0.5:i/(n-1)), Y=v=>padT+(h-padT-padB)*(1-v/max);
+  let s=`<svg viewBox="0 0 ${w} ${h}" width="100%">`;
+  for(let k=0;k<=4;k++){ const y=padT+(h-padT-padB)*(1-k/4); s+=`<line x1="${padL}" x2="${w-6}" y1="${y}" y2="${y}" stroke="#e3e8f0"/><text x="${padL-6}" y="${y+4}" font-size="10" text-anchor="end" fill="#637083">${n0(max*k/4)}</text>`; }
+  xs.forEach((x,i)=>{ if(i%Math.ceil(n/8)===0) s+=`<text x="${X(i)}" y="${h-padB+15}" font-size="10" text-anchor="middle" fill="#637083">${x}</text>`; });
+  s+=`<text x="${w/2}" y="${h-14}" font-size="10.5" text-anchor="middle" fill="#637083"></text>`;
+  series.forEach(se=>{ s+=`<polyline fill="none" stroke="${se.color}" stroke-width="2" points="${se.values.map((v,i)=>X(i)+','+Y(v)).join(' ')}"/>`; });
+  series.forEach((se,i)=>{ s+=`<rect x="${w-250+i*125}" y="${padT}" width="12" height="3" fill="${se.color}"/><text x="${w-234+i*125}" y="${padT+5}" font-size="11" fill="#1c2733">${esc(se.name)}</text>`; });
+  return s+'</svg>';
+}
+function hbars(items, {fmt=f4}={}){
+  const max=Math.max(...items.map(i=>i.value),1e-12);
+  return items.map(i=>`<div style="display:flex;align-items:center;gap:10px;margin:5px 0"><div style="width:150px;text-align:right;color:#637083;font-size:12.5px">${esc(i.label)}</div><div style="flex:1;background:#edf1f6;border-radius:4px"><div style="width:${Math.max(i.value/max*100,0.6)}%;height:16px;background:#2f5d8a;border-radius:4px"></div></div><div style="width:64px;font-size:12.5px">${fmt(i.value)}</div></div>`).join('');
+}
+function prCurve(curve, cur){
+  const w=520,h=260,pl=58,pb=34,pt=12, X=r=>pl+(w-pl-12)*r, Y=p=>pt+(h-pt-pb)*(1-p);
+  const maxP=Math.min(1,Math.max(...curve.map(c=>c.precision),0.01)*1.08);
+  const Yp=p=>pt+(h-pt-pb)*(1-p/maxP);
+  let s=`<svg viewBox="0 0 ${w} ${h}" width="100%">`;
+  for(let k=0;k<=4;k++){ const y=pt+(h-pt-pb)*(1-k/4); s+=`<line x1="${pl}" x2="${w-12}" y1="${y}" y2="${y}" stroke="#e3e8f0"/><text x="${pl-6}" y="${y+4}" font-size="10" text-anchor="end" fill="#637083">${(maxP*k/4*100).toFixed(maxP<0.1?1:0)}%</text>`;
+    const x=pl+(w-pl-12)*k/4; s+=`<text x="${x}" y="${h-pb+15}" font-size="10" text-anchor="middle" fill="#637083">${(k*25)}%</text>`; }
+  s+=`<text x="${w/2}" y="${h-4}" font-size="11" text-anchor="middle" fill="#1c2733">Recall</text><text transform="rotate(-90)" x="${-h/2}" y="11" font-size="11" text-anchor="middle" fill="#1c2733">Precision</text>`;
+  const pts=[...curve].sort((a,b)=>a.recall-b.recall);
+  s+=`<polyline fill="none" stroke="#2f5d8a" stroke-width="2" points="${pts.map(c=>X(c.recall)+','+Yp(c.precision)).join(' ')}"/>`;
+  s+=`<circle cx="${X(cur.recall)}" cy="${Yp(cur.precision)}" r="6" fill="#e08a3c" stroke="#fff" stroke-width="2"/>`;
+  return s+'</svg>';
+}
+
+/* ------------------------------------------------ tabs */
+const loaded = {};
+const loaders = {overview, transactions, alerts, model, pipeline};
+$('#nav').addEventListener('click', e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x===b));
+  document.querySelectorAll('section').forEach(x=>x.classList.toggle('active',x.id===b.dataset.tab));
+  if(b.dataset.tab==='pipeline' || !loaded[b.dataset.tab]){ loaded[b.dataset.tab]=true; loaders[b.dataset.tab](); }
+});
+
+/* ------------------------------------------------ Overview */
+async function overview(){
+  const el=$('#overview'); el.innerHTML='Loading…';
+  const d=await api('/api/overview');
+  if(!d.available){ el.innerHTML=empty('Results',d.hint); return; }
+  const ds=d.dataset, m=d.metrics, t=d.test;
+  let h='<div class="grid kpis">';
+  h+=kpi('Transactions (Hive)', ds?n0(ds.total_transactions):'—', ds?'after Pig cleaning':'Hive stage not run');
+  h+=kpi('Fraud cases', ds?n0(ds.fraud_transactions):'—', ds?('fraud rate '+ds.fraud_percentage+'%'):'');
+  h+=kpi('Test transactions', t?n0(t.rows):(m?n0(m.test):'—'), t?('actual fraud '+n0(t.actual_fraud)):'');
+  h+=kpi('Predicted fraud', t?n0(t.predicted_fraud):(m?n0(m.tp+m.fp):'—'), m?('model: '+(d.is_random_forest?'Random Forest':'see Model tab')):'');
+  h+=kpi('Fraud recall', m?pct(m.recall):'—', m?'share of frauds caught':'');
+  h+=kpi('Fraud precision', m?pct(m.precision):'—', m&&m.fp!=null&&m.tp?('~'+n0(m.fp/m.tp)+' false alarms per fraud'):'');
+  h+='</div><div class="grid two">';
+  h+=`<div class="card"><h3>Fraud by transaction type<small>Hive</small></h3>${d.by_type?barChart(d.by_type.map(r=>({label:r.type,value:r.fraud_transactions,color:r.fraud_transactions?'#c0504d':'#9bb7d4'}))):empty('Hive analysis','Run the Hive stage.')}${d.by_type?'<div class="note">Fraud occurs only in types with a non-zero bar; the other types contain no fraud.</div>':''}</div>`;
+  h+=`<div class="card"><h3>Fraud rate within type<small>Hive</small></h3>${d.by_type?barChart(d.by_type.map(r=>({label:r.type,value:r.fraud_percentage,color:r.fraud_percentage?'#e08a3c':'#9bb7d4'})),{valueFmt:v=>Number(v).toFixed(3)+'%'}):empty('Hive analysis','Run the Hive stage.')}</div>`;
+  const trendNote=(t&&t.predicted_fraud>2*t.actual_fraud)?'The model flags far more transactions than are actually fraud; it trades precision for recall (see Model performance).':'Predicted and actual fraud per day, from the held-out test set.';
+  h+=`<div class="card" style="grid-column:1/-1"><h3>Fraud per simulated day<small>test-set predictions, 24 steps per day</small></h3>${d.trend?lineChart([{name:'Actual fraud',color:'#c0504d',values:d.trend.map(x=>x.actual)},{name:'Predicted fraud',color:'#2f5d8a',values:d.trend.map(x=>x.predicted)}],d.trend.map(x=>x.day)):empty('Predictions','Run bash scripts/export_results.sh after the Spark stage.')}${d.trend?`<div class="note">${trendNote}</div>`:''}</div>`;
+  h+='</div>';
+  el.innerHTML=h;
+}
+
+/* ------------------------------------------------ Transactions */
+const tstate={page:1};
+async function transactions(){
+  const el=$('#transactions');
+  const probe=await api('/api/transactions?size=1');
+  if(!probe.available){ el.innerHTML=empty(probe.what,probe.hint); return; }
+  el.innerHTML=`<div class="card"><div class="bar">
+   <label>Type<select id="f-type"><option value="all">All</option>${probe.types.map(t=>`<option>${esc(t)}</option>`).join('')}</select></label>
+   <label>Status<select id="f-status"><option value="all">All</option><option value="pred_fraud">Predicted fraud</option><option value="pred_legit">Predicted legitimate</option><option value="actual_fraud">Actual fraud</option><option value="tp">True positive (caught)</option><option value="fp">False positive (false alarm)</option><option value="fn">False negative (missed)</option></select></label>
+   <label>Min amount<input type="number" id="f-min" min="0"></label><label>Max amount<input type="number" id="f-max" min="0"></label>
+   <label>Min risk score<input type="number" id="f-prob" min="0" max="1" step="0.05"></label>
+   <label>Sort by<select id="f-sort"><option value="probability">Risk score</option><option value="amount">Amount</option><option value="step">Time step</option></select></label>
+   <button class="btn" id="f-go">Apply</button></div><div id="t-body"></div></div>`;
+  $('#f-go').onclick=()=>{tstate.page=1;loadTx();};
+  loadTx();
+}
+function txTable(rows, withStatus=true){
+  if(!rows.length) return '<div class="empty">No transactions match.</div>';
+  const cls=r=>r.actual&&r.predicted?['TP','tp']:(!r.actual&&r.predicted?['FP','fp']:(r.actual?['FN','fn']:['TN','tn']));
+  return `<div class="tw"><table><thead><tr><th class="l">Step</th><th class="l">Type</th><th>Amount</th><th>Risk score</th><th class="l">Predicted</th><th class="l">Actual</th><th class="l">Outcome</th></tr></thead><tbody>`+
+  rows.map(r=>{const c=cls(r);return `<tr><td>${r.step}</td><td class="l">${esc(r.type)}</td><td>${n2(r.amount)}</td><td>${f4(r.probability)}</td><td class="l"><span class="pill ${r.predicted?'p-yes':'p-no'}">${r.predicted?'Fraud':'Legit'}</span></td><td class="l"><span class="pill ${r.actual?'p-yes':'p-no'}">${r.actual?'Fraud':'Legit'}</span></td><td class="l"><span class="pill p-${c[1]}">${c[0]}</span></td></tr>`}).join('')+'</tbody></table></div>';
+}
+async function loadTx(){
+  const q=new URLSearchParams({type:$('#f-type').value,status:$('#f-status').value,min_amount:$('#f-min').value,max_amount:$('#f-max').value,min_prob:$('#f-prob').value,sort:$('#f-sort').value,page:tstate.page,size:25});
+  $('#t-body').innerHTML='Loading…';
+  const d=await api('/api/transactions?'+q);
+  $('#t-body').innerHTML=`<div class="note" style="margin:0 0 8px">${n0(d.total)} matching transactions (test set)</div>${txTable(d.rows)}<div class="pager"><button class="btn" id="pv" ${d.page<=1?'disabled':''}>Previous</button>Page ${d.page} of ${n0(d.pages)}<button class="btn" id="nx" ${d.page>=d.pages?'disabled':''}>Next</button></div>`;
+  $('#pv').onclick=()=>{tstate.page--;loadTx();}; $('#nx').onclick=()=>{tstate.page++;loadTx();};
+}
+
+/* ------------------------------------------------ Alerts */
+async function alerts(){
+  const el=$('#alerts');
+  const probe=await api('/api/alerts?limit=1');
+  if(!probe.available){ el.innerHTML=empty(probe.what,probe.hint); return; }
+  el.innerHTML=`<div class="card"><div class="bar"><label>Alert threshold (risk score ≥)<input type="number" id="a-t" min="0" max="1" step="0.05" value="0.5"></label>
+   <label>Type<select id="a-type"><option value="all">All</option>${probe.types.map(t=>`<option>${esc(t)}</option>`).join('')}</select></label>
+   <label>Show top<select id="a-limit"><option>25</option><option selected>50</option><option>100</option><option>200</option></select></label><button class="btn" id="a-go">Update</button></div><div id="a-body"></div></div>`;
+  $('#a-go').onclick=loadAlerts; loadAlerts();
+}
+async function loadAlerts(){
+  const q=new URLSearchParams({t:$('#a-t').value,type:$('#a-type').value,limit:$('#a-limit').value});
+  const d=await api('/api/alerts?'+q);
+  const prec=d.total_alerts?d.confirmed/d.total_alerts:0;
+  $('#a-body').innerHTML=`<div class="note" style="margin:0 0 10px"><b>${n0(d.total_alerts)}</b> alerts at this threshold; <b>${n0(d.confirmed)}</b> are real fraud (precision ${pct(prec)}). Showing the highest-risk ${n0(d.rows.length)}.</div>${txTable(d.rows)}`;
+}
+
+/* ------------------------------------------------ Model */
+async function model(){
+  const el=$('#model'); el.innerHTML='Loading…';
+  const m=await api('/api/model');
+  if(!m.available){ el.innerHTML=empty(m.what,m.hint); return; }
+  const s=m.summary;
+  let h=`<div class="note" style="margin:0 0 12px">${esc(m.model||'Model')} · metrics file updated ${esc(m.updated||'—')}${m.is_random_forest?'':' · <b>this metrics file is not from the Random Forest run</b>'}</div>`;
+  h+='<div class="grid kpis">'+kpi('Accuracy',pct(s.accuracy),'misleading at this imbalance')+kpi('Fraud precision',pct(s.precision))+kpi('Fraud recall',pct(s.recall))+kpi('F1 score',pct(s.f1))+kpi('ROC-AUC',f4(s.roc_auc))+kpi('PR-AUC',f4(s.pr_auc),'main metric here')+'</div>';
+  h+='<div class="grid two">';
+  h+=`<div class="card"><h3>Confusion matrix<small>test set</small></h3><div class="cm"><div class="h"></div><div class="h">Predicted legit</div><div class="h">Predicted fraud</div>
+   <div class="h" style="text-align:right">Actual legit</div><div style="background:#e0f1e7"><div class="v">${n0(s.tn)}</div><div class="k">true negatives</div></div><div style="background:#fcf0d4"><div class="v">${n0(s.fp)}</div><div class="k">false positives</div></div>
+   <div class="h" style="text-align:right">Actual fraud</div><div style="background:#fbe3e2"><div class="v">${n0(s.fn)}</div><div class="k">false negatives</div></div><div style="background:#cfe8d9"><div class="v">${n0(s.tp)}</div><div class="k">true positives</div></div></div>
+   <div class="note">Test rows: ${n0(s.test)} · training rows: ${n0(s.train)} · fraud rate ${s.fraud_pct!=null?Number(s.fraud_pct).toFixed(4)+'%':'—'}</div></div>`;
+  h+=`<div class="card"><h3>Feature importances<small>${m.importances.length?'Random Forest':''}</small></h3>${m.importances.length?hbars(m.importances.slice(0,10).map(i=>({label:i.feature,value:i.importance}))):'<div class="empty">No feature importances in this metrics file.</div>'}</div>`;
+  h+=`<div class="card" style="grid-column:1/-1"><h3>Threshold explorer<small>computed from the real test-set predictions</small></h3><div id="th-body">${m.predictions_loaded?'Loading…':empty('Predictions','Run bash scripts/export_results.sh to enable the interactive threshold explorer.')}</div></div>`;
+  if(m.thresholds.length) h+=`<div class="card" style="grid-column:1/-1"><h3>Thresholds recorded by the Spark run<small>spark/results/metrics.txt</small></h3><div class="tw"><table><thead><tr><th class="l">Threshold</th><th>Precision</th><th>Recall</th><th>Flagged</th><th>TP</th><th>FP</th></tr></thead><tbody>${m.thresholds.map(t=>`<tr><td>${t.threshold}</td><td>${pct(t.precision)}</td><td>${pct(t.recall)}</td><td>${n0(t.flagged)}</td><td>${n0(t.tp)}</td><td>${n0(t.fp)}</td></tr>`).join('')}</tbody></table></div></div>`;
+  h+='</div>';
+  el.innerHTML=h;
+  if(m.predictions_loaded) thresholdExplorer();
+}
+async function thresholdExplorer(){
+  const d=await api('/api/threshold?t=0.5'); const body=$('#th-body');
+  body.innerHTML=`<div class="slider"><span>Threshold</span><input type="range" id="th" min="0.02" max="0.98" step="0.01" value="0.5"><b id="th-v">0.50</b></div><div class="grid two"><div id="th-stats"></div><div id="th-curve"></div></div>
+  <div class="note">A flagged transaction has risk score ≥ threshold. Raising the threshold removes false alarms but misses more fraud. Choosing the final threshold on this same test set would overstate performance; use a separate validation split for that.</div>`;
+  const draw=cur=>{
+    $('#th-v').textContent=Number(cur.threshold).toFixed(2);
+    $('#th-stats').innerHTML=`<table><tbody><tr><td>Flagged transactions</td><td>${n0(cur.flagged)}</td></tr><tr><td>True positives (caught)</td><td>${n0(cur.tp)}</td></tr><tr><td>False positives (false alarms)</td><td>${n0(cur.fp)}</td></tr><tr><td>False negatives (missed)</td><td>${n0(cur.fn)}</td></tr><tr><td>Precision</td><td>${pct(cur.precision)}</td></tr><tr><td>Recall</td><td>${pct(cur.recall)}</td></tr><tr><td>F1</td><td>${pct(cur.f1)}</td></tr><tr><td>False alarms per caught fraud</td><td>${cur.false_alarms_per_fraud==null?'—':n2(cur.false_alarms_per_fraud)}</td></tr></tbody></table>`;
+    $('#th-curve').innerHTML=prCurve(d.curve,cur);
+  };
+  draw(d.at);
+  let timer; $('#th').oninput=e=>{ clearTimeout(timer); $('#th-v').textContent=Number(e.target.value).toFixed(2);
+    timer=setTimeout(async()=>{ const r=await api('/api/threshold?t='+e.target.value); draw(r.at); },120); };
+}
+
+/* ------------------------------------------------ Pipeline */
+async function pipeline(){
+  const el=$('#pipeline'); el.innerHTML='Checking…';
+  const d=await api('/api/pipeline');
+  const lbl={done:'Complete',partial:'Partial',missing:'Not found',unknown:'Unknown'};
+  el.innerHTML=`<div class="card"><h3>Pipeline status<small>checked just now</small></h3>${d.stages.map(s=>`<div class="stage"><span class="dot ${s.status}"></span><span class="n">${esc(s.name)}</span><span class="t">${esc(s.tool)}</span><span class="w">${esc(s.where)}${s.updated?' · updated '+esc(s.updated):''}</span><b>${lbl[s.status]}</b></div>`).join('')}
+  ${d.hdfs_cli?'':'<div class="note">The hdfs command is not available to this app, so HDFS stages show "Unknown". Local result files are still checked.</div>'}</div>`;
+}
+overview(); loaded.overview=true;
+api('/api/parts').then(d=>{
+  const p=d.parts; if(!p || p.done>=p.total) return;
+  const el=$('#partial'); el.style.display='block';
+  el.innerHTML=`<b>Partial data:</b> these results cover ${n0(p.done)} of ${n0(p.total)} parts (about ${n0(p.done*p.rows_per_part)} transactions), not the whole dataset. Run <code>bash scripts/run_all.sh --retrain</code> to continue with the remaining parts.`;
+}).catch(()=>{});
+</script>
+</body>
+</html>

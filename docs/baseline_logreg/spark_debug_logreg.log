@@ -1,0 +1,87 @@
+26/10/17 05:35:33 WARN Utils: Your hostname, balaji-VirtualBox resolves to a loopback address: 127.0.1.1; using 10.0.2.15 instead (on interface enp0s3)
+26/10/17 05:35:33 WARN Utils: Set SPARK_LOCAL_IP if you need to bind to another address
+26/10/17 05:35:38 INFO SparkContext: Running Spark version 3.5.9
+26/10/17 05:35:38 INFO SparkContext: OS info Linux, 7.0.0-38-generic, amd64
+26/10/17 05:35:38 INFO SparkContext: Java version 1.8.0_504
+26/10/17 05:35:39 WARN NativeCodeLoader: Unable to load native-hadoop library for your platform... using builtin-java classes where applicable
+26/10/17 05:35:40 INFO ResourceUtils: ==============================================================
+26/10/17 05:35:40 INFO ResourceUtils: No custom resources configured for spark.driver.
+26/10/17 05:35:40 INFO ResourceUtils: ==============================================================
+26/10/17 05:35:40 INFO SparkContext: Submitted application: FraudLens-SparkMLlib
+26/10/17 05:35:40 INFO ResourceProfile: Default ResourceProfile created, executor resources: Map(cores -> name: cores, amount: 1, script: , vendor: , memory -> name: memory, amount: 1024, script: , vendor: , offHeap -> name: offHeap, amount: 0, script: , vendor: ), task resources: Map(cpus -> name: cpus, amount: 1.0)
+26/10/17 05:35:40 INFO ResourceProfile: Limiting resource is cpu
+26/10/17 05:35:40 INFO ResourceProfileManager: Added ResourceProfile id: 0
+26/10/17 05:35:40 INFO SecurityManager: Changing view acls to: balaji
+26/10/17 05:35:40 INFO SecurityManager: Changing modify acls to: balaji
+26/10/17 05:35:40 INFO SecurityManager: Changing view acls groups to: 
+26/10/17 05:35:40 INFO SecurityManager: Changing modify acls groups to: 
+26/10/17 05:35:40 INFO SecurityManager: SecurityManager: authentication disabled; ui acls disabled; users with view permissions: balaji; groups with view permissions: EMPTY; users with modify permissions: balaji; groups with modify permissions: EMPTY
+26/10/17 05:35:41 INFO Utils: Successfully started service 'sparkDriver' on port 35763.
+26/10/17 05:35:41 INFO SparkEnv: Registering MapOutputTracker
+26/10/17 05:35:41 INFO SparkEnv: Registering BlockManagerMaster
+26/10/17 05:35:41 INFO BlockManagerMasterEndpoint: Using org.apache.spark.storage.DefaultTopologyMapper for getting topology information
+26/10/17 05:35:41 INFO BlockManagerMasterEndpoint: BlockManagerMasterEndpoint up
+26/10/17 05:35:41 INFO SparkEnv: Registering BlockManagerMasterHeartbeat
+26/10/17 05:35:42 INFO DiskBlockManager: Created local directory at /tmp/blockmgr-ad3fec4f-8a1a-4cb8-a557-f6415b904b82
+26/10/17 05:35:42 INFO MemoryStore: MemoryStore started with capacity 912.3 MiB
+26/10/17 05:35:42 INFO SparkEnv: Registering OutputCommitCoordinator
+26/10/17 05:35:42 INFO JettyUtils: Start Jetty 0.0.0.0:4040 for SparkUI
+26/10/17 05:35:42 INFO Utils: Successfully started service 'SparkUI' on port 4040.
+26/10/17 05:35:42 INFO Executor: Starting executor ID driver on host 10.0.2.15
+26/10/17 05:35:42 INFO Executor: OS info Linux, 7.0.0-38-generic, amd64
+26/10/17 05:35:42 INFO Executor: Java version 1.8.0_504
+26/10/17 05:35:42 INFO Executor: Starting executor with user classpath (userClassPathFirst = false): ''
+26/10/17 05:35:42 INFO Executor: Created or updated repl class loader org.apache.spark.util.MutableURLClassLoader@4262a8d8 for default.
+26/10/17 05:35:43 INFO Utils: Successfully started service 'org.apache.spark.network.netty.NettyBlockTransferService' on port 42099.
+26/10/17 05:35:43 INFO NettyBlockTransferService: Server created on 10.0.2.15:42099
+26/10/17 05:35:43 INFO BlockManager: Using org.apache.spark.storage.RandomBlockReplicationPolicy for block replication policy
+26/10/17 05:35:43 INFO BlockManagerMaster: Registering BlockManager BlockManagerId(driver, 10.0.2.15, 42099, None)
+26/10/17 05:35:43 INFO BlockManagerMasterEndpoint: Registering block manager 10.0.2.15:42099 with 912.3 MiB RAM, BlockManagerId(driver, 10.0.2.15, 42099, None)
+26/10/17 05:35:43 INFO BlockManagerMaster: Registered BlockManager BlockManagerId(driver, 10.0.2.15, 42099, None)
+26/10/17 05:35:43 INFO BlockManager: Initialized BlockManager: BlockManagerId(driver, 10.0.2.15, 42099, None)
+
+=== FRAUDLENS PART 3: SPARK MLlib ===
+Reading cleaned PaySim data from: hdfs:///fraudlens/processed/paysim_cleaned
+Valid records used: 6101255
+Legitimate records: 6093435
+Fraud records: 7820
+Fraud percentage: 0.12817%
+
+Training records: 4880150
+Testing records: 1221105
+Training class weights calculated.
+
+Training weighted Logistic Regression with Spark MLlib...
+Model training completed.
+Saving trained model to HDFS...
+Generating test-set predictions...
+
+=== MODEL EVALUATION ===
+FraudLens - Spark MLlib evaluation
+Model: weighted Logistic Regression
+Input: hdfs:///fraudlens/processed/paysim_cleaned
+Total valid records: 6101255
+Legitimate records: 6093435
+Fraud records: 7820
+Fraud percentage: 0.128170%
+Training records: 4880150
+Testing records: 1221105
+
+Confusion matrix (test set):
+True negatives: 1049613
+False positives: 169917
+False negatives: 150
+True positives: 1425
+
+Accuracy: 0.860727
+Fraud precision: 0.008317
+Fraud recall: 0.904762
+Fraud F1-score: 0.016482
+ROC-AUC: 0.962220
+PR-AUC: 0.300007
+
+Saved model: hdfs:///fraudlens/models/spark_fraud_model
+Saved predictions: hdfs:///fraudlens/results/spark_fraud_predictions
+
+SUCCESS: Part 3 completed.
+Metrics saved locally: /home/balaji/FraudLens/spark/results/metrics.txt

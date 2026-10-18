@@ -1,0 +1,10 @@
+# Keep shell/Pig/Hive/Python files with LF endings on every OS (CRLF breaks bash scripts after a Windows checkout).
+* text=auto
+*.sh   text eol=lf
+*.pig  text eol=lf
+*.hql  text eol=lf
+*.py   text eol=lf
+*.md   text eol=lf
+*.env  text eol=lf
+*.zip  binary
+*.png  binary
