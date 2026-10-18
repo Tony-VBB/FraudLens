@@ -3,16 +3,17 @@
 End-to-end fraud-detection pipeline on the [PaySim](https://www.kaggle.com/datasets/ealaxi/paysim1) mobile-money dataset:
 **Hadoop (HDFS/YARN) → Pig (cleaning) → Hive (analytics) → Spark MLlib (Random Forest classifier).**
 
-> **Status of this revision.** The code and documentation issues from `docs/AUDIT_REPORT.md` are fixed and the shell control flow was
-> tested against stub tools (see `CHANGELOG.md` for each item and what remains environment-specific). The pipeline has **not** been re-run on a real cluster since the fixes, so the
-> Random Forest has no metrics yet and the Hive log still reflects the *old* cleaning. Run the pipeline once and refresh them
-> ([Section 7](#7-results)).
+> **Status of this revision (6).** The full chain **Hadoop → Pig → Hive → Spark Random Forest was run successfully on a real
+> Ubuntu 24.04 VM on a 100,000-row dataset** (`--sample-rows 100000`, see below). The full 6.36-million-row run uses the same
+> scripts; follow [Running the full dataset](#running-the-full-dataset). Problems met on the first real run and their fixes are
+> in [Troubleshooting: problems met on a real machine](#troubleshooting-problems-met-on-a-real-machine). The numbers in
+> [Section 7](#7-results) are from older runs; refresh them from `spark/results/metrics.txt` after your own run.
 
 ---
 
 ## Quick start on a new machine (after `git clone`)
 
-Tested target: Ubuntu 24.04 (or 22.04), 4 GB RAM or more, about 6 GB free disk, internet access for the first setup.
+Tested target: Ubuntu 24.04 (or 22.04), 4 GB RAM or more, **at least 8 GB free disk** for setup plus a 100,000-row run (about 5 GB more for the full dataset), internet access for the first setup.
 
 ```bash
 git clone https://github.com/<your-user>/<your-repo>.git
@@ -53,6 +54,81 @@ bash scripts/run_ui.sh --export                             # dashboard shows th
   Hive recreates its external table for whichever folder is active (the table is only metadata; no data is deleted).
 - A sample is one Pig job (one part). The next `run_all.sh` **without** `--sample-rows` is a full run again.
 - Expect about 150 frauds in 100,000 rows, so about 30 in the 20 % test set: precision/recall are noisy at that size. Use the full data for final numbers.
+
+## Running the full dataset
+
+Do this after the 100,000-row run has worked. Everything below is run from the project folder.
+
+**Before you start (each point caused a real problem):**
+
+1. **The CSV must be on the local disk**, in `data/raw/paysim/`:
+   ```bash
+   unzip -o ~/Downloads/archive.zip -d data/raw/paysim        # Kaggle download "paysim1"
+   ls -lh data/raw/paysim/                                     # PS_20174392719_1491204439457_log.csv, about 470 MB
+   wc -l data/raw/paysim/PS_20174392719_1491204439457_log.csv  # must be 6362621 (6,362,620 rows + header)
+   ```
+   If the pipeline cannot find the local CSV it silently falls back to a file already in HDFS. After a sample run that file may hold
+   only 100,000 rows, so a "full" run would use 100,000 rows. Check that the first lines of the run say
+   `Mode: full dataset` and `Splitting the local file ... into parts of 600000 rows` (not `Splitting the HDFS file`).
+2. **Disk space: have at least 5 GB free** (`df -h /`). The CSV, its parts in HDFS and the cleaned data all take space; a full disk
+   makes HDFS enter safe mode and breaks the setup (see troubleshooting).
+3. **Remove stale results from earlier runs** so stages are not skipped as "already complete":
+   ```bash
+   hdfs dfs -ls /fraudlens/raw /fraudlens/processed /fraudlens/models /fraudlens/results
+   hdfs dfs -rm /fraudlens/raw/PS_20174392719_1491204439457_log.csv                  # an old 100k copy, if present
+   hdfs dfs -rm -r -skipTrash /fraudlens/processed/paysim_cleaned /fraudlens/processed/_parts \
+       /fraudlens/models/spark_fraud_rf_model /fraudlens/results/spark_fraud_rf_predictions   # old full-data results, if present
+   rm -f logs/hive_analysis_completed
+   ```
+   (A `paysim_cleaned` folder from the very first version of the pipeline was cleaned with the old numeric filter that lost about 4 % of
+   the rows; leaving it makes the runner skip Pig, Hive and Spark. The `*_sample100000` folders are not touched.)
+
+**Run:**
+```bash
+bash scripts/start_services.sh          # HDFS, YARN, JobHistory, Hive metastore, HiveServer2
+bash scripts/run_all.sh --no-prompt     # no --sample-rows = the whole dataset, 11 parts of 600,000 rows
+```
+Roughly 30 to 60 minutes for Pig (about 3 to 6 minutes per part on a small VM), about 10 minutes for Hive and 15 to 30 minutes for Spark.
+You may stop at any time (Ctrl-C) and run the same command to resume; finished parts are skipped. To try it first:
+`bash scripts/run_all.sh --max-parts 2` cleans two parts and analyses only those.
+
+**Check:** `cat spark/results/metrics.txt`, `bash scripts/check_pipeline.sh` (cleaned rows about 6.36 million, under 1 % dropped),
+`bash scripts/run_ui.sh --export` (dashboard). The dashboard and the checker follow the last run: a run without `--sample-rows` is the full data.
+
+## Troubleshooting: problems met on a real machine
+
+These all happened on the first real run (VirtualBox, Ubuntu 24.04, 25 GB disk). Symptom, cause, fix.
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `mkdir: cannot create directory ... No space left on device` during setup; the toolchain install stops half-way | The VM disk is full. The setup needs about 6 GB free | Free space (below), or enlarge the VM disk, then rerun `bash setup/bootstrap.sh` |
+| `ln: failed to create symbolic link '/home/<you>/hive': File exists` and Spark is never installed | A stale or broken `~/hive` link (often left by an interrupted install) aborted the script before Spark was downloaded | `rm -f ~/hive`, then `bash setup/install_toolchain.sh` (fixed in revision 6: `ln -sfn`) |
+| `configure_environment.sh` reports `Spark: .../spark-2.4.8-bin-hadoop2.7` | `SPARK_HOME` in your shell or `~/.bashrc` pointed at an old Spark, and the config script prefers that variable. Spark 2.4 cannot run this pipeline | `unset SPARK_HOME HIVE_HOME`, remove those lines from `~/.bashrc`, `rm config/fraudlens.env`, `bash setup/configure_environment.sh`; it must now show `spark-3.5.9-bin-hadoop3` |
+| `start_services.sh` hangs at `Checking YARN` (blank lines), `YARN not responding` | The Hadoop config had been written while the disk was full | `$HADOOP_HOME/sbin/stop-yarn.sh; $HADOOP_HOME/sbin/stop-dfs.sh`, `bash setup/configure_hadoop.sh --force`, `bash scripts/start_services.sh`; look at `$HADOOP_HOME/logs/*nodemanager*.log` and `bash scripts/diagnose.sh` if it persists |
+| `ERROR: Timed out waiting for the Hive metastore (port 9083)` | The Derby metastore was never initialised (or was half-created while the disk was full) | `pkill -f "hive --service"; rm -rf ~/hadoop_data/hive_metastore_db ~/hadoop_data/derby.log; bash setup/configure_hive.sh --force; bash scripts/start_services.sh`. Only Hive's catalogue is removed, not HDFS data |
+| Pig prints `Retrying connect to server: 0.0.0.0/0.0.0.0:10020` for minutes | The MapReduce JobHistory server is not running; clients ask it for the result of a finished job | `$HADOOP_HOME/bin/mapred --daemon start historyserver` (revision 6 starts it in `start_services.sh`). The Pig job may already have finished: look for `_SUCCESS` in `/fraudlens/processed/_parts*/part_0001` and rerun `run_all.sh`; finished parts are skipped |
+| Hive output looks like it repeats | Beeline echoes each query several times and every query is two MapReduce jobs of about 1 to 1.5 minutes | Wait. Job ids (`job_..._0006`, `_0007`, ...) and the `Stage-1 map = x%` lines change; it is not looping. 6 queries take about 8 minutes |
+| `cat: Unable to write to output stream.` while splitting | Harmless: `head` closes the pipe after reading the CSV header | Ignore |
+| `Splitting the HDFS file ...` and `the file has only 100000 data rows` | The local CSV was not found; an older 100,000-row file in `/fraudlens/raw/` was used | Put the full CSV in `data/raw/paysim/` and delete the old HDFS copy (see "Running the full dataset") |
+| Spark stage fails at import with `No module named 'pandas'` | Spark 3.5 `pyspark.ml.functions` needs pandas; the setup does not install it | Fixed in revision 6 (fallback in `fraud_model.py`). Alternatively `python3.12 -m pip install --break-system-packages pandas` |
+| `check_pipeline.sh` shows `cleaned rows=0` | Old versions looked for `part-*` but part-mode files are named `pNNNN-part-r-*` | Fixed in revision 6 |
+| A stage is skipped as "already complete" when you wanted a fresh run | Output with `_SUCCESS` exists in HDFS (or `logs/hive_analysis_completed`) | Remove that output deliberately (commands under "Running the full dataset"); nothing is ever deleted automatically |
+
+**Freeing disk space safely** (do this before setup or a full run; check with `df -h /`):
+```bash
+rm -rf ~/Downloads/fraudlens          # downloaded tool archives (about 1.5 GB), not needed after install
+rm -f ~/Downloads/archive.zip         # only after data/raw/paysim/ has the extracted CSV
+sudo apt-get clean && sudo apt-get autoremove -y
+sudo journalctl --vacuum-size=50M
+rm -rf ~/.cache/* ; sudo rm -rf /tmp/*
+hdfs dfs -rm -r -skipTrash /fraudlens/raw/parts_sample100000 /fraudlens/processed/_parts_sample100000   # sample leftovers, optional
+```
+To enlarge a VirtualBox disk: shut the VM down, File, Tools, Virtual Media Manager, resize the disk, boot, then
+`sudo apt install -y cloud-guest-utils; sudo growpart /dev/sda 2; sudo resize2fs /dev/sda2` (check the partition number with `lsblk`;
+with LVM use `sudo lvextend -r -l +100%FREE <lv path>`).
+
+**Order that works on a fresh VM:** free 8 GB or more, `bash setup/bootstrap.sh`, check `config/fraudlens.env` names Spark 3.5.9,
+`bash scripts/start_services.sh`, `bash scripts/run_all.sh --sample-rows 100000 --no-prompt`, then the full run.
 
 ## Running in parts (stop and resume)
 
@@ -316,18 +392,53 @@ This is the expectation to confirm on the first run, not a measured result.
 
 ## 7. Results
 
-### Random Forest (current model)
-Not yet measured with the fixed pipeline. After a run, `spark/results/metrics.txt` contains the confusion matrix, accuracy,
-precision, recall, F1, ROC-AUC, PR-AUC, precision/recall at thresholds 0.3/0.5/0.7/0.9, and the feature importances.
-Paste the final figures here.
+### Random Forest (current model, full PaySim data)
+Measured on the full dataset after the fixed pipeline (`spark/results/metrics.txt`, run on the Ubuntu VM):
+
+| Item | Value |
+|---|---:|
+| Raw rows (without header) | 6,362,620 |
+| Rows after Pig cleaning | 6,362,620 (0 dropped) |
+| Fraud rows | 8,213 (0.129 %) |
+| Training / test rows | 5,089,383 / 1,273,237 (80/20, seed 42) |
+
+| Metric (test set, threshold 0.5) | Value |
+|---|---:|
+| Accuracy | 97.93 % |
+| Fraud precision | 5.83 % |
+| Fraud recall | 98.97 % |
+| Fraud F1 | 0.1102 |
+| ROC-AUC | 0.9985 |
+| PR-AUC | 0.8557 |
+
+Confusion matrix: TN 1,245,214 · FP 26,372 · FN 17 · TP 1,634 (1,651 frauds in the test set, 1,634 caught).
+
+Precision and recall at other probability thresholds (the dashboard has an interactive version):
+
+| Threshold | Precision | Recall | Transactions flagged | TP | FP |
+|---:|---:|---:|---:|---:|---:|
+| 0.3 | 3.75 % | 99.39 % | 43,793 | 1,641 | 42,152 |
+| 0.5 | 5.83 % | 98.97 % | 28,006 | 1,634 | 26,372 |
+| 0.7 | 11.25 % | 96.97 % | 14,236 | 1,601 | 12,635 |
+| 0.9 | 44.48 % | 86.07 % | 3,195 | 1,421 | 1,774 |
+
+Feature importances (highest first): `originBalanceChange` 0.348, `oldbalanceOrg` 0.163, `newbalanceOrig` 0.115, `amount` 0.099,
+`type=PAYMENT` 0.056, `destBalanceChange` 0.047, `type=TRANSFER` 0.042, `type=CASH_IN` 0.035, `step` 0.030, `newbalanceDest` 0.030,
+`oldbalanceDest` 0.023, `type=CASH_OUT` 0.011, `type=DEBIT` 0.0002. The derived balance-change feature built in Pig is the strongest one.
+
+How to read it: the model catches almost every fraud (recall 98.97 %) but, because fraud is only 0.13 % of the rows and the classes are weighted
+to favour recall, it raises many false alarms (precision 5.83 %). Raising the threshold to 0.9 gives precision 44.5 % at 86.1 % recall.
+Accuracy is not meaningful at a 0.13 % fraud rate; judge the model on PR-AUC, recall and precision at a chosen threshold.
 
 Model: `RandomForestClassifier` in a pipeline `StringIndexer → OneHotEncoder → VectorAssembler → RandomForest`, 40 trees, depth 8,
 32 bins, 50 % row subsampling per tree, inverse-frequency class weights, seed 42, 80/20 random split. No scaler is used
 (trees are scale-invariant). Features: `step`, `amount`, origin/destination old and new balances, the two derived balance
-changes, and the one-hot transaction type. Account IDs and `isFlaggedFraud` are excluded.
+changes, and the one-hot transaction type. Account IDs and `isFlaggedFraud` are excluded. The Hive analysis of the same data is in
+`hive/fraud_analysis_output.log`.
 
 ### Previous baseline: weighted Logistic Regression (old cleaning, 6,101,255 rows)
-Kept in `docs/baseline_logreg/` for comparison only.
+Kept in `docs/baseline_logreg/` for comparison only. It used the old numeric filter that dropped 261,365 rows, so it is not a like-for-like
+comparison; the Random Forest above improves PR-AUC from 0.300 to 0.856 and ROC-AUC from 0.962 to 0.999.
 
 | Metric | Value |
 |---|---:|
@@ -343,10 +454,10 @@ models on PR-AUC and on precision at a fixed recall.
 
 ## 8. Known limitations
 
-- `oldbalance*/newbalance*` are tightly tied to how PaySim simulates fraud (7,808 of 7,820 fraud rows in the old data have
-  `newbalanceOrig = 0`); results will not transfer to real transaction data.
+- `oldbalance*/newbalance*` are tightly tied to how PaySim simulates fraud (almost every fraud row ends with `newbalanceOrig = 0`;
+  Hive query 6 in `hive/fraud_analysis_output.log` gives the exact count), so the very high recall and ROC-AUC will not transfer to real transaction data.
 - `step` is a time counter; consider dropping it or using a time-based split instead of a random split.
-- A 40-tree forest on ~5 M rows with `local[2]` and 2 GB takes a while; lower `RF_NUM_TREES`/`RF_MAX_DEPTH` or raise
+- A 40-tree forest on ~5 M training rows with `local[2]` and 2 GB takes a while; lower `RF_NUM_TREES`/`RF_MAX_DEPTH` or raise
   `SPARK_DRIVER_MEMORY` in `config/fraudlens.env` to trade accuracy for speed.
 - Pig 0.17.0 targets Hadoop 2.x. The first recorded Pig failure (`Job in state DEFINE instead of RUNNING`) may come from that combination with Hadoop 3.3.6; later runs succeeded, but keep it in mind if it reappears.
 
