@@ -3,11 +3,31 @@
 End-to-end fraud-detection pipeline on the [PaySim](https://www.kaggle.com/datasets/ealaxi/paysim1) mobile-money dataset:
 **Hadoop (HDFS/YARN) → Pig (cleaning) → Hive (analytics) → Spark MLlib (Random Forest classifier).**
 
-> **Status of this revision (6).** The full chain **Hadoop → Pig → Hive → Spark Random Forest was run successfully on a real
-> Ubuntu 24.04 VM on a 100,000-row dataset** (`--sample-rows 100000`, see below). The full 6.36-million-row run uses the same
-> scripts; follow [Running the full dataset](#running-the-full-dataset). Problems met on the first real run and their fixes are
-> in [Troubleshooting: problems met on a real machine](#troubleshooting-problems-met-on-a-real-machine). The numbers in
-> [Section 7](#7-results) are from older runs; refresh them from `spark/results/metrics.txt` after your own run.
+> **Status.** The full chain **Hadoop → Pig → Hive → Spark Random Forest has been run successfully on a real Ubuntu 24.04 VM**,
+> first on a 100,000-row sample (`--sample-rows 100000`) and then on the **complete PaySim dataset (6,362,620 rows, 0 dropped by cleaning)**.
+> The measured results are in [Section 7](#7-results). Problems met on the way and their fixes are in
+> [Troubleshooting: problems met on a real machine](#troubleshooting-problems-met-on-a-real-machine).
+
+## Dataset
+
+[PaySim](https://www.kaggle.com/datasets/ealaxi/paysim1) is a simulation of mobile-money transactions built from the logs of a real
+mobile-money service in Africa, so fraud can be studied without exposing real customers. The file `PS_20174392719_1491204439457_log.csv`
+(about 470 MB) has **6,362,620 rows** covering 30 days of simulated activity in hourly steps, and **8,213 of them (0.129 %) are fraud**.
+
+| Column | Meaning |
+|---|---|
+| `step` | hour of the simulation (1 to 744 = 30 days) |
+| `type` | PAYMENT, TRANSFER, CASH_OUT, CASH_IN or DEBIT |
+| `amount` | amount of money moved |
+| `nameOrig` / `nameDest` | sending / receiving account |
+| `oldbalanceOrg`, `newbalanceOrig` | sender's balance before / after |
+| `oldbalanceDest`, `newbalanceDest` | receiver's balance before / after |
+| `isFraud` | label to predict: 1 = fraud, 0 = normal |
+| `isFlaggedFraud` | the simulator's own simple rule (very large transfers); it fires almost never |
+
+Fraud occurs only in TRANSFER and CASH_OUT transactions, and the extreme class imbalance (0.13 %) drives the main design choices:
+class-weighted training in Spark and evaluation on recall, PR-AUC and precision at a threshold instead of accuracy.
+The dataset is not in the repository (470 MB); download it from Kaggle and put it in `data/raw/paysim/`.
 
 ---
 
@@ -371,8 +391,8 @@ beeline -u "$HIVE_JDBC_URL" -e "SELECT COUNT(*), SUM(isFraud) FROM fraudlens.pay
 cat spark/results/metrics.txt
 ```
 
-Expected after the filter fix (stock PaySim): **6,362,620 rows, 8,213 fraud, 16 flagged** if nothing legitimate is dropped.
-This is the expectation to confirm on the first run, not a measured result.
+Confirmed on the full run: **6,362,620 raw rows, 6,362,620 rows after cleaning (0 dropped), 8,213 fraud** (`check_pipeline.sh` and
+`spark/results/metrics.txt`). The count of rows flagged by the dataset's own rule is in Hive query 4 of `hive/fraud_analysis_output.log`.
 
 ### Troubleshooting
 
@@ -389,6 +409,87 @@ This is the expectation to confirm on the first run, not a measured result.
 | `SafeModeException ... Resources are low on NN` | Free disk space, then `hdfs dfsadmin -safemode leave` |
 | `Output directory ... already exists` | Intended guard; remove it deliberately (the error prints the command) or skip the stage |
 | Hive tables vanished after starting Hive from another directory | Derby metastore was relative to the current directory; `setup/configure_hive.sh` pins it to `~/hadoop_data/hive_metastore_db` |
+
+## Part 3: Spark MLlib Random Forest
+
+### Purpose
+Train and evaluate a fraud classifier on the cleaned PaySim transactions produced by the Pig stage (the same data Hive analyses).
+
+### Model
+`RandomForestClassifier` (class-weighted) in a Spark ML pipeline:
+`StringIndexer(type) → OneHotEncoder → VectorAssembler → RandomForestClassifier`.
+Hyper-parameters come from `config/fraudlens.env` (`RF_NUM_TREES`, `RF_MAX_DEPTH`, `RF_MAX_BINS`,
+`RF_SUBSAMPLING_RATE`, `RF_MIN_INSTANCES_PER_NODE`). Account IDs and `isFlaggedFraud` are not used as features.
+The fraud class is weighted by inverse frequency because only 0.13 % of the rows are fraud; the data is split 80/20 with a fixed seed (42).
+
+### Evaluation
+Accuracy, fraud precision/recall/F1, ROC-AUC, PR-AUC, test-set confusion matrix, precision/recall at probability thresholds
+0.3 / 0.5 / 0.7 / 0.9, and ranked feature importances.
+
+### Outputs
+- HDFS model: `$HDFS_MODEL_DIR` (default `/fraudlens/models/spark_fraud_rf_model`)
+- HDFS predictions (CSV with header): `$HDFS_PREDICTIONS_DIR` (default `/fraudlens/results/spark_fraud_rf_predictions`)
+- Local metrics: `spark/results/metrics.txt` (written last, only after model and predictions were saved)
+- Run log: `spark/results/spark_run.log`
+
+### Run
+`bash spark/run_fraud_model.sh` (loading `config/fraudlens.env` is not required beforehand; the script loads it itself).
+The runner and the script refuse to overwrite existing model or prediction paths and require `$HDFS_CLEAN_DIR/_SUCCESS`.
+
+### Requirements
+Python 3.12 with `numpy`, `packaging` and `setuptools` (the latter provides the `distutils` shim PySpark 3.5 imports).
+`pandas` is optional: `fraud_model.py` falls back to a small UDF when it is missing.
+
+### Raw output of the full run (`spark/results/metrics.txt`)
+```text
+FraudLens - Spark MLlib evaluation
+Model: Random Forest (numTrees=40, maxDepth=8, maxBins=32, subsamplingRate=0.50, minInstancesPerNode=10, class-weighted, seed=42)
+Input: hdfs:///fraudlens/processed/paysim_cleaned
+Total valid records: 6362620
+Legitimate records: 6354407
+Fraud records: 8213
+Fraud percentage: 0.129082%
+Training records: 5089383
+Testing records: 1273237
+
+Confusion matrix (test set, default decision rule):
+True negatives: 1245214
+False positives: 26372
+False negatives: 17
+True positives: 1634
+
+Accuracy: 0.979274
+Fraud precision: 0.058345
+Fraud recall: 0.989703
+Fraud F1-score: 0.110193
+ROC-AUC: 0.998507
+PR-AUC: 0.855710
+
+Precision/recall by probability threshold:
+threshold 0.3: precision=0.037472 recall=0.993943 flagged=43793 (TP=1641 FP=42152)
+threshold 0.5: precision=0.058345 recall=0.989703 flagged=28006 (TP=1634 FP=26372)
+threshold 0.7: precision=0.112461 recall=0.969715 flagged=14236 (TP=1601 FP=12635)
+threshold 0.9: precision=0.444757 recall=0.860690 flagged=3195 (TP=1421 FP=1774)
+
+Feature importances (highest first):
+originBalanceChange    0.348481
+oldbalanceOrg          0.162842
+newbalanceOrig         0.115076
+amount                 0.099158
+type=PAYMENT           0.055843
+destBalanceChange      0.047194
+type=TRANSFER          0.041644
+type=CASH_IN           0.035004
+step                   0.030162
+newbalanceDest         0.029885
+oldbalanceDest         0.023260
+type=CASH_OUT          0.011202
+type=DEBIT             0.000249
+type=<unseen>          0.000000
+
+Saved model: hdfs:///fraudlens/models/spark_fraud_rf_model
+Saved predictions: hdfs:///fraudlens/results/spark_fraud_rf_predictions
+```
 
 ## 7. Results
 
